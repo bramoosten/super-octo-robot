@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Recovery — Day by Day</title>
+<title>Recovery</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -166,6 +166,19 @@ header .subtitle {
 .check-box.checked {
   background: var(--black);
   color: var(--white);
+}
+
+.check-box.indeterminate {
+  background: var(--faint);
+  border-color: var(--accent);
+}
+
+.check-box.indeterminate::after {
+  content: '';
+  display: block;
+  width: 55%;
+  height: 2px;
+  background: var(--black);
 }
 
 .checklist li.done .task-text {
@@ -388,9 +401,9 @@ footer {
 <button class="med-ref-toggle" onclick="toggleMeds()">Medication reference</button>
 <div class="med-ref" id="medRef">
   <dl>
-    <dt>Omeprazol 20 mg</dt><dd>1 tablet, morning, empty stomach · stomach protection</dd>
+    <dt>Omeprazol 20 mg</dt><dd>1 tablet, morning, empty stomach · stomach protection · discontinue from ~day 9 post-op (e.g. 28 Mar 2026) unless GP says otherwise</dd>
     <dt>Paracetamol 1 g</dt><dd>Up to 3× daily (every 6–8 hrs) · baseline pain</dd>
-    <dt>Naproxen 250 mg</dt><dd>1 tablet 2× daily with food · anti-inflammatory · review with GP around week 3</dd>
+    <dt>Naproxen 250 mg</dt><dd>1 tablet 2× daily with food · anti-inflammatory · discontinue from ~day 9 post-op (e.g. 28 Mar 2026) unless GP says otherwise</dd>
     <dt>Lovenox 40 mg</dt><dd>1 subcutaneous injection daily, same time · clot prevention · until ~3 May</dd>
     <dt>Tramadol (as needed)</dt><dd>For breakthrough pain · causes drowsiness and constipation · do not combine with alcohol</dd>
   </dl>
@@ -412,6 +425,8 @@ const PHASE_1_END = 14;
 const PHASE_2_END = 28;
 const PHASE_3_END = 42; // 6 weeks built out
 const LOVENOX_END = 45;
+/** Last day index (inclusive) for Omeprazole + Naproxen; next day onward they are off the list (after day 7 post-op; first off-day aligns with 28 Mar 2026 from 19 Mar surgery). */
+const NSAID_OMEPRAZOLE_LAST_DAY = 8;
 
 let currentDay = getDayNumber(new Date());
 
@@ -433,6 +448,41 @@ function isChecked(dayNum, taskId) {
   const s = loadState();
   const key = `d${dayNum}`;
   return s[key] && s[key].includes(taskId);
+}
+
+function getOptionalState(dayNum, taskId) {
+  const s = loadState();
+  const key = `d${dayNum}_opt`;
+  const m = s[key] || {};
+  const v = m[String(taskId)];
+  if (v === 'c') return 'checked';
+  if (v === 'u') return 'unchecked';
+  return 'indeterminate';
+}
+
+function setOptionalState(dayNum, taskId, state) {
+  const s = loadState();
+  const optKey = `d${dayNum}_opt`;
+  if (!s[optKey]) s[optKey] = {};
+  if (state === 'indeterminate') delete s[optKey][String(taskId)];
+  else s[optKey][String(taskId)] = state === 'checked' ? 'c' : 'u';
+  if (Object.keys(s[optKey]).length === 0) delete s[optKey];
+  saveState(s);
+}
+
+function toggleOptional(dayNum, taskId) {
+  const st = getOptionalState(dayNum, taskId);
+  if (st === 'indeterminate') setOptionalState(dayNum, taskId, 'checked');
+  else if (st === 'checked') setOptionalState(dayNum, taskId, 'unchecked');
+  else setOptionalState(dayNum, taskId, 'indeterminate');
+}
+
+function taskCountsTowardComplete(dayNum, taskId, task) {
+  if (task.optional) {
+    const st = getOptionalState(dayNum, taskId);
+    return st === 'checked' || st === 'indeterminate';
+  }
+  return isChecked(dayNum, taskId);
 }
 
 function toggleCheck(dayNum, taskId) {
@@ -484,7 +534,7 @@ function formatDateShort(d) {
 const MILESTONES = [
   { day: 0, label: 'Surgery (ORIF)' },
   { day: 7, label: 'One week post-op' },
-  { day: 14, label: 'Two weeks \u2014 early healing complete' },
+  { day: 14, label: 'Two weeks \u2014 early healing' },
   { day: 20, label: 'Staple removal eligible / OLVG follow-up' },
   { day: 30, label: 'Follow-up X-ray' },
   { day: 31, label: 'Work incapacity certificate review' },
@@ -538,8 +588,12 @@ function getTasksForDay(dayNum) {
   // ================================================================
   // MORNING
   // ================================================================
-  tasks.push({ slot: 'morning', text: 'Omeprazol 20 mg \u2014 empty stomach before breakfast' });
-  tasks.push({ slot: 'morning', text: 'Paracetamol 1 g + Naproxen 250 mg \u2014 with breakfast' });
+  if (dayNum <= NSAID_OMEPRAZOLE_LAST_DAY) {
+    tasks.push({ slot: 'morning', text: 'Omeprazol 20 mg \u2014 empty stomach before breakfast' });
+    tasks.push({ slot: 'morning', text: 'Paracetamol 1 g + Naproxen 250 mg \u2014 with breakfast' });
+  } else {
+    tasks.push({ slot: 'morning', text: 'Paracetamol 1 g \u2014 with breakfast' });
+  }
 
   if (dayNum < 20) {
     tasks.push({ slot: 'morning', text: 'Check wound: no spreading redness, no pus, no smell' });
@@ -603,7 +657,13 @@ function getTasksForDay(dayNum) {
   // ================================================================
   // EVENING
   // ================================================================
-  tasks.push({ slot: 'evening', text: 'Paracetamol 1 g + Naproxen 250 mg \u2014 with dinner' });
+  if (dayNum <= NSAID_OMEPRAZOLE_LAST_DAY) {
+    tasks.push({ slot: 'evening', text: 'Paracetamol 1 g + Naproxen 250 mg \u2014 with dinner' });
+  } else {
+    tasks.push({ slot: 'evening', text: 'Paracetamol 1 g \u2014 with dinner' });
+  }
+
+  tasks.push({ slot: 'evening', text: 'Tramadol (if needed for breakthrough pain)', optional: true });
 
   if (dayNum <= LOVENOX_END) {
     tasks.push({ slot: 'evening', text: 'Lovenox 40 mg subcutaneous injection' });
@@ -639,10 +699,10 @@ function getTasksForDay(dayNum) {
   // ================================================================
   tasks.push({ slot: 'anytime', text: 'Drink 2+ litres of water' });
 
-  // Shower
+  // Wash (wound protection) — staggered on odd days vs prior even-day pattern
   if (dayNum <= 21) {
-    if (dayNum % 2 === 0) {
-      tasks.push({ slot: 'anytime', text: 'Shower (with wound protection)' });
+    if (dayNum % 2 === 1) {
+      tasks.push({ slot: 'anytime', text: 'Wash (with wound protection)' });
     }
   } else {
     tasks.push({ slot: 'anytime', text: 'Shower' });
@@ -665,8 +725,8 @@ function getTasksForDay(dayNum) {
     tasks.push({ slot: 'anytime', text: 'Elevate leg when resting' });
   }
 
-  // Nurse visits M/W/F before staple removal
-  if (dayNum < 20 && (dayOfWeek === 1 || dayOfWeek === 3 || dayOfWeek === 5)) {
+  // Nurse visits Tue & Fri before staple removal
+  if (dayNum < 20 && (dayOfWeek === 2 || dayOfWeek === 5)) {
     tasks.push({ slot: 'anytime', text: 'Nurse visit \u2014 dressing change' });
   }
 
@@ -675,11 +735,7 @@ function getTasksForDay(dayNum) {
     tasks.push({ slot: 'anytime', text: 'Weekly platelet count (via nurse or lab)' });
   }
 
-  // Tramadol reminder (always available as needed, not a checkbox — but include as context)
-  // Actually, let's add it as an as-needed note for bad days
-  if (dayNum <= PHASE_2_END) {
-    tasks.push({ slot: 'anytime', text: 'Tramadol for breakthrough pain', note: 'as needed \u2014 not required daily' });
-  }
+  
 
   // ================================================================
   // SPECIAL EVENTS on specific days
@@ -697,7 +753,7 @@ function getTasksForDay(dayNum) {
     tasks.push({ slot: 'anytime', text: 'Review work incapacity \u2014 request extension from GP if needed' });
   }
   if (dayNum === 21) {
-    tasks.push({ slot: 'anytime', text: 'Consider discussing Naproxen taper with GP if pain is improving' });
+    tasks.push({ slot: 'anytime', text: 'Discuss ongoing pain management with GP if needed' });
   }
   if (dayNum === 42) {
     tasks.push({ slot: 'morning', text: 'Week 6 assessment \u2014 discuss weight-bearing with surgeon' });
@@ -713,50 +769,49 @@ function getTasksForDay(dayNum) {
 // ENCOURAGEMENT MESSAGES
 // ============================================================
 const MESSAGES = [
-  { text: 'The body heals in silence. While you rest, bone is being rebuilt cell by cell.', attrib: null },
-  { text: 'It does not matter how slowly you go, as long as you do not stop.', attrib: 'Confucius' },
-  { text: 'You are not behind. You are exactly where recovery needs you to be today.', attrib: null },
-  { text: 'Patience is not passive waiting. It is active acceptance of the process required to attain your goals.', attrib: 'Ray Davis' },
-  { text: 'One good day follows another. That is how recovery works \u2014 not in leaps, but in steady accumulation.', attrib: null },
-  { text: 'The human body replaces itself entirely every seven to ten years. You are, quite literally, rebuilding.', attrib: null },
-  { text: 'Healing is not linear. A harder day does not erase a good week.', attrib: null },
-  { text: 'What lies behind us and what lies before us are tiny matters compared to what lies within us.', attrib: 'Ralph Waldo Emerson' },
-  { text: 'Rest is not idleness. To lie on the grass on a summer day, listening \u2014 is by no means a waste of time.', attrib: 'John Lubbock' },
-  { text: 'Every rep of every exercise is a deposit in the bank of your future mobility.', attrib: null },
-  { text: 'Your bones are harder than concrete and five times stronger than steel of the same density. Trust the engineering.', attrib: null },
-  { text: 'Strength does not come from physical capacity. It comes from an indomitable will.', attrib: 'Mahatma Gandhi' },
-  { text: 'You have survived 100% of your worst days. This is a fact worth remembering.', attrib: null },
-  { text: 'The oak fought the wind and was broken; the willow bent and survived.', attrib: 'Robert Jordan' },
-  { text: 'Two weeks in. The wound is closing. The swelling is receding. Progress is quiet but real.', attrib: null },
-  { text: 'Fall seven times, stand up eight.', attrib: 'Japanese proverb' },
-  { text: 'Your body is not working against you. Every ache is a signal of repair in progress.', attrib: null },
-  { text: 'The best time to plant a tree was twenty years ago. The second best time is now. Each exercise you do today is a seed.', attrib: 'Chinese proverb' },
-  { text: 'Recovery is boring. Boring is good. Boring means things are going according to plan.', attrib: null },
-  { text: 'Halfway through the hardest phase. The crutches will not be forever.', attrib: null },
-  { text: 'Out of suffering have emerged the strongest souls.', attrib: 'Khalil Gibran' },
-  { text: 'Three weeks. The staples are out or coming out. Underneath: new tissue, new strength.', attrib: null },
-  { text: 'A journey of a thousand miles begins with a single step. Yours is coming.', attrib: 'Lao Tzu' },
-  { text: 'Do not judge each day by the harvest you reap but by the seeds that you plant.', attrib: 'Robert Louis Stevenson' },
-  { text: 'The difference between try and triumph is a little umph.', attrib: 'Marvin Phillips' },
-  { text: 'Your knee bent a little further today than it did last week. That is victory.', attrib: null },
-  { text: 'Continuous effort, not strength or intelligence, is the key to unlocking potential.', attrib: 'Winston Churchill' },
-  { text: 'One month. The bone is knitting. The X-ray will show it. You are ahead of where you think.', attrib: null },
-  { text: 'The world breaks everyone, and afterward, some are strong at the broken places.', attrib: 'Ernest Hemingway' },
-  { text: 'You are doing the work. The work is working.', attrib: null },
-  { text: 'Five weeks. One more week of non-weight-bearing. The finish line of this phase is visible.', attrib: null },
-  { text: 'Stars cannot shine without darkness.', attrib: null },
-  { text: 'The last mile of a journey is the longest. But you are walking it.', attrib: null },
-  { text: 'Almost there. Week six approaches. Soon: your foot meets the ground again.', attrib: null },
-  { text: 'Courage is not the absence of fear, but the triumph over it.', attrib: 'Nelson Mandela' },
-  { text: 'Six weeks. You made it through the hardest part. Everything from here gets a little easier, a little freer.', attrib: null },
-  { text: 'What we achieve inwardly will change outer reality.', attrib: 'Plutarch' },
-  { text: 'The pain you feel today is the strength you feel tomorrow.', attrib: null },
-  { text: 'Smooth seas do not make skillful sailors.', attrib: 'African proverb' },
-  { text: 'You did not come this far to only come this far.', attrib: null },
-  { text: 'Today is a good day. If it is not, it is a day that will pass. Both are fine.', attrib: null },
-  { text: 'Nothing in the world is worth having or worth doing unless it means effort, pain, difficulty.', attrib: 'Theodore Roosevelt' },
+  { text: 'The body heals in silence. While you lie awake counting hours, bone is being rebuilt cell by cell. The work does not need your attention to continue.', attrib: null },
+  { text: 'Today might just be about getting through today. That is enough. It has always been enough.', attrib: null },
+  { text: 'You are not falling behind. There is no schedule you are failing to keep. Recovery is not a performance.', attrib: null },
+  { text: 'The frustration you feel is not a sign of weakness. It is the reasonable response of a capable person forced into dependency. It will pass. You will not always need help to cross a room.', attrib: null },
+  { text: 'One good day follows another. That is how recovery actually works — not in breakthroughs, but in barely perceptible accumulation. You will not notice it happening. Then one morning you will.', attrib: null },
+  { text: 'Your body is not broken. It is mid-process. A construction site looks like destruction until you understand the blueprint.', attrib: null },
+  { text: 'Healing is not linear. A harder day does not erase a good week. Write that down somewhere you can see it on the next hard day.', attrib: null },
+  { text: 'The walls of this room are not your life. They are a temporary container. The world outside is patient and it is not going anywhere.', attrib: null },
+  { text: 'Rest is not the absence of progress. Rest is where the actual repair happens. Your only job right now is to let it.', attrib: null },
+  { text: 'Every small exercise — every quad set, every ankle pump — is tedious and unglamorous and genuinely doing something. The boring work is the real work.', attrib: null },
+  { text: 'A tibial plateau fracture heals because bone is extraordinary material — harder than concrete, capable of regenerating itself entirely. You are not fragile. You are mid-rebuild.', attrib: null },
+  { text: 'If you are angry today, be angry. If you are sad, be sad. Recovery does not require you to be brave. It requires you to show up tomorrow regardless.', attrib: null },
+  { text: 'You have survived every single day that felt unsurvivable. Your track record on this is flawless.', attrib: null },
+  { text: 'The people around you do not fully understand what this feels like. That is not their failure and it is not yours. Isolation is part of the territory. Name it, and it holds a little less power.', attrib: null },
+  { text: 'Two weeks in. The incision is closing. The swelling is slowly receding. You cannot see the repair happening underneath, but it has not paused once.', attrib: null },
+  { text: 'There will be a day when you forget about your knee for ten whole minutes. Then an hour. Then most of a day. That process has already started, even if it does not feel like it.', attrib: null },
+  { text: 'Pain is not punishment. It is the immune system doing exactly what it was designed to do — loudly, inconveniently, effectively.', attrib: null },
+  { text: 'Each physio exercise you do today is ungrateful work. It will not thank you. In six weeks your leg will thank you on its behalf.', attrib: null },
+  { text: 'Recovery is boring. Boring is underrated. Boring means nothing is going wrong. Boring means the plan is working.', attrib: null },
+  { text: 'Halfway through the non-weight-bearing phase. The crutches are not permanent. They are scaffolding, and scaffolding comes down.', attrib: null },
+  { text: 'Some days the hardest thing is not the pain but the monotony. The same room, the same leg, the same careful choreography of getting from bed to bathroom. It is okay to find this maddening.', attrib: null },
+  { text: 'Three weeks. The staples are out or coming out. Underneath: new tissue laid down in layers you cannot feel yet but the surgeon can see.', attrib: null },
+  { text: 'You will walk again without thinking about walking. You will take stairs without planning each one. These things will return so gradually you will barely notice the moment they become normal.', attrib: null },
+  { text: 'Do not measure today by what you accomplished. Measure it by the fact that you are still in the process. Still here. Still healing.', attrib: null },
+  { text: 'The gap between how you feel and how you are doing is wide right now. You are almost certainly doing better than it feels from the inside.', attrib: null },
+  { text: 'Your knee bent a degree further today than it did last week. You probably did not notice. Your physio did. That is measurable, physical, real progress.', attrib: null },
+  { text: 'Nobody recovers from surgery through willpower. You recover through sleep, protein, hydration, and tedious exercises repeated until you hate them. Discipline is quieter than motivation and it works better.', attrib: null },
+  { text: 'One month. The bone is knitting. The fracture lines on the next X-ray will be softer than the last. You are structurally less broken than you were yesterday, even if you do not feel it.', attrib: null },
+  { text: 'Some people will tell you to stay positive. You do not have to stay positive. You have to stay committed. Those are different things and the second one is harder and more honest.', attrib: null },
+  { text: 'You are doing the work even on the days it does not feel like it is working. It is working.', attrib: null },
+  { text: 'Five weeks. One more week of non-weight-bearing. You can see the end of this phase from here, even on the difficult days.', attrib: null },
+  { text: 'It is three in the morning and the leg aches and the ceiling is familiar. This too is part of it. Tomorrow you will be one day further out from surgery and one day closer to the version of this that is bearable.', attrib: null },
+  { text: 'The people who care about you are tired too. Not of you — of watching someone they love be in pain and being unable to fix it. Let them help with the small things. It is for both of you.', attrib: null },
+  { text: 'Almost there. Week six approaches. The weight-bearing phase is close. Your leg has been waiting for this.', attrib: null },
+  { text: 'Courage is not the absence of fear or frustration. It is getting up and doing the exercises anyway, on a Tuesday, when nobody is watching and there is no applause.', attrib: null },
+  { text: 'Six weeks. You made it through the hardest phase. Not gracefully, not easily — but completely. Everything from here is a little freer.', attrib: null },
+  { text: 'The version of you on the other side of this will know something about patience and endurance that the previous version did not. That knowledge is expensive and it is yours to keep.', attrib: null },
+  { text: 'The pain is real. The frustration is real. The progress is also real. All three coexist. You do not have to choose.', attrib: null },
+  { text: 'Nobody warned you that recovery would be this lonely. Now you know, and knowing does not fix it but it means you are not confused about what you are feeling. That matters.', attrib: null },
+  { text: 'You did not come this far — through the accident, the surgery, the worst nights — to stop now. Not because stopping is weakness, but because you already know you will not.', attrib: null },
+  { text: 'Today is a day. It does not need to be a good one. It just needs to end, and it will, and tomorrow the leg will be one day stronger.', attrib: null },
+  { text: 'Somewhere ahead of you is a completely ordinary day where you walk to get coffee without thinking about it. That day is being built right now, in this tedious, painful, necessary stretch. Hold on to it.', attrib: null },
 ];
-
 function getMessage(dayNum) {
   return MESSAGES[dayNum % MESSAGES.length];
 }
@@ -818,10 +873,29 @@ function render() {
     html += `<div class="time-heading">${SLOT_LABELS[slot]}</div>`;
     html += `<ul class="checklist">`;
     slotTasks.forEach(t => {
-      const checked = isChecked(clampedDay, t.globalIdx);
       const noteHtml = t.note ? ` <span class="task-note">(${t.note})</span>` : '';
-      html += `<li class="${checked ? 'done' : ''}" onclick="toggle(${clampedDay}, ${t.globalIdx})">
-        <div class="check-box ${checked ? 'checked' : ''}">${checked ? '\u2713' : ''}</div>
+      let boxClass = '';
+      let boxMark = '';
+      let liDone = false;
+      if (t.optional) {
+        const st = getOptionalState(clampedDay, t.globalIdx);
+        if (st === 'checked') {
+          boxClass = 'checked';
+          boxMark = '\u2713';
+          liDone = true;
+        } else if (st === 'indeterminate') {
+          boxClass = 'indeterminate';
+        }
+      } else {
+        const checked = isChecked(clampedDay, t.globalIdx);
+        if (checked) {
+          boxClass = 'checked';
+          boxMark = '\u2713';
+          liDone = true;
+        }
+      }
+      html += `<li class="${liDone ? 'done' : ''}" onclick="toggle(${clampedDay}, ${t.globalIdx}, ${t.optional ? 'true' : 'false'})">
+        <div class="check-box ${boxClass}">${boxMark}</div>
         <div class="task-text">${t.text}${noteHtml}</div>
       </li>`;
     });
@@ -830,8 +904,8 @@ function render() {
 
   sectionsEl.innerHTML = html;
 
-  // Completion count
-  const doneCount = tasks.filter((_, i) => isChecked(clampedDay, i)).length;
+  // Completion count (optional tasks count when checked or indeterminate)
+  const doneCount = tasks.filter((t, i) => taskCountsTowardComplete(clampedDay, i, t)).length;
   const compEl = document.getElementById('dayCompletion');
   if (doneCount === tasks.length && tasks.length > 0) {
     compEl.className = 'day-completion all-done';
@@ -847,8 +921,9 @@ function render() {
   encEl.innerHTML = '\u201C' + msg.text + '\u201D' + (msg.attrib ? '<span class="attrib">\u2014 ' + msg.attrib + '</span>' : '');
 }
 
-function toggle(dayNum, taskIdx) {
-  toggleCheck(dayNum, taskIdx);
+function toggle(dayNum, taskIdx, isOptional) {
+  if (isOptional) toggleOptional(dayNum, taskIdx);
+  else toggleCheck(dayNum, taskIdx);
   render();
 }
 
