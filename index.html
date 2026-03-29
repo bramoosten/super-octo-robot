@@ -383,7 +383,7 @@ footer {
   <div class="day-label" id="dayLabel"></div>
   <button id="nextBtn" onclick="navigate(1)">Next</button>
 </div>
-<button class="today-btn" onclick="goToday()">Today</button>
+<button class="today-btn" id="todayBtn" onclick="goToday()">Today</button>
 
 <div class="phase-label" id="phaseLabel"></div>
 
@@ -856,6 +856,7 @@ function render() {
     `<span class="day-date">${formatDate(date)} \u00b7 Week ${weekNum}</span>`;
   document.getElementById('prevBtn').disabled = clampedDay <= 0;
   document.getElementById('nextBtn').disabled = clampedDay >= TOTAL_RECOVERY_DAYS;
+  document.getElementById('todayBtn').style.display = isToday ? 'none' : 'block';
 
   // Phase
   document.getElementById('phaseLabel').textContent = `${phase.name} \u00b7 ${phase.weeks}`;
